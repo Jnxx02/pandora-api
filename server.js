@@ -2126,21 +2126,29 @@ app.delete('/api/dokumentasi/:id', async (req, res) => {
 
 
 // Jalankan server di semua environment
-app.listen(PORT, () => {
-  console.log(`🚀 Server is running on http://localhost:${PORT}`);
-  console.log(`📊 API endpoints:`);
-  console.log(`   GET  /api/health - Health check`);
-
-  console.log(`   GET  /api/statistik - Get statistik data`);
-  console.log(`   POST /api/statistik - Save statistik data`);
-  console.log(`   GET  /api/dokumentasi - Get dokumentasi data`);
-  console.log(`   POST /api/dokumentasi - Add new dokumentasi`);
-  console.log(`   PUT  /api/dokumentasi/:id - Update dokumentasi`);
-  console.log(`   DELETE /api/dokumentasi/:id - Delete dokumentasi`);
-  console.log(`   POST /api/dokumentasi/download - Increment download count`);
+if (process.env.VERCEL) {
+  // Vercel serverless - tidak perlu listen
+  console.log('🚀 Running on Vercel - serverless mode');
+  console.log(`📊 API endpoints available`);
   console.log(`📧 Email System: ${process.env.EMAIL_USER ? 'Configured' : 'Not configured'}`);
   console.log(`🔧 Supabase Status: ${supabaseStatus}`);
-});
+} else {
+  // Local development
+  app.listen(PORT, () => {
+    console.log(`🚀 Server is running on http://localhost:${PORT}`);
+    console.log(`📊 API endpoints:`);
+    console.log(`   GET  /api/health - Health check`);
+    console.log(`   GET  /api/statistik - Get statistik data`);
+    console.log(`   POST /api/statistik - Save statistik data`);
+    console.log(`   GET  /api/dokumentasi - Get dokumentasi data`);
+    console.log(`   POST /api/dokumentasi - Add new dokumentasi`);
+    console.log(`   PUT  /api/dokumentasi/:id - Update dokumentasi`);
+    console.log(`   DELETE /api/dokumentasi/:id - Delete dokumentasi`);
+    console.log(`   POST /api/dokumentasi/download - Increment download count`);
+    console.log(`📧 Email System: ${process.env.EMAIL_USER ? 'Configured' : 'Not configured'}`);
+    console.log(`🔧 Supabase Status: ${supabaseStatus}`);
+  });
+}
 
 module.exports = app;
 
