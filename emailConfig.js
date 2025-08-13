@@ -1,5 +1,5 @@
 const nodemailer = require('nodemailer');
-const { createPengaduanNotificationTemplate, createStatusUpdateTemplate } = require('./emailTemplates');
+const { createPengaduanNotificationTemplate, createStatusUpdateTemplate, createPasswordResetTemplate, createPasswordChangeConfirmationTemplate } = require('./emailTemplates');
 
 // Konfigurasi transporter email
 const createTransporter = () => {
@@ -26,8 +26,8 @@ const createTransporter = () => {
   
   // Konfigurasi berdasarkan environment variables
   const emailConfig = {
-    user: process.env.EMAIL_USER || 'desa.moncongloebulu@gmail.com',
-    pass: process.env.EMAIL_PASSWORD || 'your-app-password'
+    user: process.env.EMAIL_USER || 'moncongloebulu.desa@gmail.com',
+    pass: process.env.EMAIL_PASSWORD || 'dnmt ijei trxs inet'
   };
 
   // Jika ada konfigurasi SMTP custom
@@ -149,6 +149,14 @@ const sendPengaduanNotificationToMultiple = async (pengaduanData, recipientEmail
       console.error('❌ Invalid pengaduan data:', pengaduanData);
       return { success: false, error: 'Invalid pengaduan data' };
     }
+    
+    // Debug data before creating email
+    console.log('📧 EMAIL CONFIG DEBUG:', {
+      pengaduanData,
+      judulField: pengaduanData.judul,
+      judulType: typeof pengaduanData.judul,
+      allKeys: Object.keys(pengaduanData)
+    });
     
     const transporter = createTransporter();
     const emailContent = createPengaduanNotificationEmail(pengaduanData);
@@ -344,11 +352,59 @@ const getStatusColor = (status) => {
   }
 };
 
+// Fungsi untuk mengirim email reset password
+const sendPasswordResetEmail = async (resetToken, adminUsername, recipientEmail) => {
+  try {
+    const transporter = createTransporter();
+    const emailContent = createPasswordResetTemplate(resetToken, adminUsername);
+    
+    const mailOptions = {
+      from: process.env.EMAIL_USER || 'desa.moncongloebulu@gmail.com',
+      to: recipientEmail,
+      subject: emailContent.subject,
+      html: emailContent.html,
+      text: emailContent.text
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log('✅ Email reset password berhasil dikirim:', info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error('❌ Error mengirim email reset password:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+// Fungsi untuk mengirim email konfirmasi perubahan password
+const sendPasswordChangeConfirmationEmail = async (adminUsername, changeTime, recipientEmail) => {
+  try {
+    const transporter = createTransporter();
+    const emailContent = createPasswordChangeConfirmationTemplate(adminUsername, changeTime);
+    
+    const mailOptions = {
+      from: process.env.EMAIL_USER || 'desa.moncongloebulu@gmail.com',
+      to: recipientEmail,
+      subject: emailContent.subject,
+      html: emailContent.html,
+      text: emailContent.text
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log('✅ Email konfirmasi perubahan password berhasil dikirim:', info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error('❌ Error mengirim email konfirmasi perubahan password:', error);
+    return { success: false, error: error.message };
+  }
+};
+
 module.exports = {
   createTransporter,
   createPengaduanNotificationEmail,
   sendPengaduanNotification,
   sendPengaduanNotificationToMultiple,
   sendStatusUpdateNotification,
-  sendNotificationToReporter
+  sendNotificationToReporter,
+  sendPasswordResetEmail,
+  sendPasswordChangeConfirmationEmail
 };

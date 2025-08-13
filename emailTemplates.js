@@ -5,6 +5,29 @@
 
 // Template untuk notifikasi pengaduan baru
 const createPengaduanNotificationTemplate = (pengaduanData) => {
+  // Debug incoming data
+  console.log('📧 EMAIL TEMPLATE DEBUG:', {
+    receivedData: pengaduanData,
+    judulField: pengaduanData?.judul,
+    judulType: typeof pengaduanData?.judul,
+    allKeys: Object.keys(pengaduanData || {}),
+    hasJudul: !!pengaduanData?.judul
+  });
+
+  // Additional detailed debugging for judul field
+  if (pengaduanData?.judul !== undefined) {
+    console.log('🔍 JUDUL FIELD DETAILED DEBUG:', {
+      judul: pengaduanData.judul,
+      judulLength: pengaduanData.judul.length,
+      judulTrimmed: pengaduanData.judul.trim(),
+      judulTrimmedLength: pengaduanData.judul.trim().length,
+      judulIsEmpty: pengaduanData.judul.trim() === '',
+      judulIsWhitespace: /^\s*$/.test(pengaduanData.judul)
+    });
+  } else {
+    console.log('❌ JUDUL FIELD IS UNDEFINED OR NULL');
+  }
+
   const {
     nama,
     email,
@@ -15,9 +38,26 @@ const createPengaduanNotificationTemplate = (pengaduanData) => {
     tanggal_kejadian,
     kategori,
     lampiran_info,
+    lampiran_data_url,
     tanggal_pengaduan,
     status = 'pending'
   } = pengaduanData;
+
+  // Debug destructured values
+  console.log('🔍 DESTRUCTURED VALUES DEBUG:', {
+    nama,
+    email,
+    whatsapp,
+    klasifikasi,
+    judul,
+    isi,
+    tanggal_kejadian,
+    kategori,
+    lampiran_info,
+    lampiran_data_url,
+    tanggal_pengaduan,
+    status
+  });
 
   const isAnonim = nama === 'Anonim';
   const contactInfo = isAnonim 
@@ -33,6 +73,16 @@ const createPengaduanNotificationTemplate = (pengaduanData) => {
   const urgencyIcon = getUrgencyIcon(urgencyLevel);
 
   const subject = `${urgencyIcon} ${klasifikasi.toUpperCase()} BARU: ${judul}`;
+  
+  // Debug values before template construction
+  console.log('🔍 TEMPLATE CONSTRUCTION DEBUG:', {
+    urgencyIcon,
+    klasifikasi,
+    judul,
+    nama,
+    whatsapp,
+    isAnonim
+  });
   
   const htmlBody = `
     <!DOCTYPE html>
@@ -268,7 +318,7 @@ const createPengaduanNotificationTemplate = (pengaduanData) => {
           
           <div class="action-buttons">
             <a href="${process.env.FRONTEND_URL || 'https://www.moncongloebulu.com/#/admin/pengaduan'}" class="btn">📋 Lihat Detail Lengkap</a>
-            ${!isAnonim && whatsapp ? `<a href="https://wa.me/${whatsapp.replace(/[^0-9+]/g, '').replace(/^0/, '+62')}?text=Halo ${nama},%0A%0AMengenai ${klasifikasi} Anda dengan judul: "${judul}"%0A%0AKami telah menerima laporan Anda dan sedang dalam proses penanganan.%0A%0AUntuk informasi lebih lanjut, silakan hubungi kami.%0A%0ATerima kasih telah melaporkan hal ini kepada kami." class="btn btn-secondary">📱 Hubungi Pelapor</a>` : ''}
+            ${!isAnonim && whatsapp ? `<a href="https://wa.me/${whatsapp.replace(/[^0-9+]/g, '').replace(/^0/, '+62')}?text=Halo ${nama},%0A%0AKami telah menerima laporan Anda dan sedang dalam proses penanganan.%0A%0ATerima kasih." class="btn btn-secondary">📱 Hubungi Pelapor</a>` : ''}
           </div>
         </div>
         
@@ -299,12 +349,29 @@ ${tanggal_kejadian ? `- Tanggal Kejadian: ${formatDate(tanggal_kejadian)}` : ''}
 👤 Informasi Pelapor:
 ${contactInfo}${attachmentInfo}
 
+💬 Template Chat WhatsApp (jika ingin hubungi pelapor):
+Halo ${nama},
+
+Kami telah menerima laporan Anda dan sedang dalam proses penanganan.
+
+Terima kasih.
+
 ---
 Email ini dikirim otomatis oleh sistem PANDORA Desa Moncongloe Bulu
 Silakan segera tindak lanjuti ${klasifikasi} ini sesuai dengan prosedur yang berlaku
 
 © ${new Date().getFullYear()} Desa Moncongloe Bulu
   `;
+
+  // Debug the final template
+  console.log('🔍 FINAL TEMPLATE DEBUG:', {
+    subject,
+    htmlLength: htmlBody.length,
+    textLength: textBody.length,
+    judulInSubject: subject.includes(judul),
+    judulInHtml: htmlBody.includes(judul),
+    judulInText: textBody.includes(judul)
+  });
 
   return {
     subject,
@@ -516,11 +583,232 @@ const formatDate = (dateString) => {
   });
 };
 
+// Template email untuk reset password admin
+const createPasswordResetTemplate = (resetToken, adminUsername) => {
+  const resetLink = `${process.env.FRONTEND_URL || 'https://moncongloebulu.com'}/#/admin/reset-password?token=${resetToken}`;
+  
+  const subject = '🔐 Reset Password Admin - Sistem PANDORA Desa Moncongloe Bulu';
+  
+  const htmlBody = `
+    <!DOCTYPE html>
+    <html lang="id">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>${subject}</title>
+      <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; box-shadow: 0 0 20px rgba(0,0,0,0.1); }
+        .header { background: linear-gradient(135deg, #dc2626, #991b1b); color: white; padding: 30px 20px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { padding: 30px 20px; background: #ffffff; }
+        .warning-box { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 20px; margin: 20px 0; }
+        .warning-icon { color: #dc2626; font-size: 24px; margin-right: 10px; }
+        .reset-button { display: inline-block; background: #dc2626; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; }
+        .reset-button:hover { background: #991b1b; }
+        .info-box { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 20px; margin: 20px 0; }
+        .footer { text-align: center; margin-top: 30px; padding: 25px 20px; background: #f9fafb; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 14px; }
+        .token-display { background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 6px; padding: 15px; font-family: monospace; font-size: 14px; margin: 15px 0; word-break: break-all; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>🔐 Reset Password Admin</h1>
+          <p>Sistem PANDORA Desa Moncongloe Bulu</p>
+        </div>
+        
+        <div class="content">
+          <p>Halo Admin,</p>
+          
+          <p>Kami menerima permintaan untuk mereset password akun admin Anda. Jika Anda tidak melakukan permintaan ini, abaikan email ini.</p>
+          
+          <div class="warning-box">
+            <span class="warning-icon">⚠️</span>
+            <strong>Peringatan Keamanan:</strong> Jangan bagikan link reset password ini kepada siapapun. Link ini hanya berlaku untuk Anda dan akan kadaluarsa dalam waktu tertentu.
+          </div>
+          
+          <p>Untuk melanjutkan proses reset password, silakan klik tombol di bawah ini:</p>
+          
+          <div style="text-align: center;">
+            <a href="${resetLink}" class="reset-button">Reset Password Sekarang</a>
+          </div>
+          
+          <p>Atau jika tombol tidak berfungsi, Anda dapat menyalin dan paste link berikut ke browser:</p>
+          
+          <div class="token-display">
+            ${resetLink}
+          </div>
+          
+          <div class="info-box">
+            <strong>Informasi Penting:</strong>
+            <ul style="margin: 10px 0; padding-left: 20px;">
+              <li>Link reset password hanya berlaku untuk sementara waktu</li>
+              <li>Setelah berhasil reset, password lama tidak akan berlaku lagi</li>
+              <li>Pastikan menggunakan password yang kuat dan unik</li>
+              <li>Jangan bagikan password baru kepada siapapun</li>
+            </ul>
+          </div>
+          
+          <p>Jika Anda mengalami masalah atau tidak melakukan permintaan ini, segera hubungi tim IT desa.</p>
+          
+          <p>Terima kasih,<br>
+          <strong>Tim IT Desa Moncongloe Bulu</strong></p>
+        </div>
+        
+        <div class="footer">
+          <p><strong>📧 Email ini dikirim otomatis oleh sistem PANDORA Desa Moncongloe Bulu</strong></p>
+          <p>Untuk keamanan, jangan balas email ini</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+  
+  const textBody = `
+🔐 Reset Password Admin - Sistem PANDORA Desa Moncongloe Bulu
+
+Halo Admin,
+
+Kami menerima permintaan untuk mereset password akun admin Anda. Jika Anda tidak melakukan permintaan ini, abaikan email ini.
+
+Peringatan Keamanan: Jangan bagikan link reset password ini kepada siapapun.
+
+Untuk melanjutkan proses reset password, silakan kunjungi link berikut:
+${resetLink}
+
+Informasi Penting:
+- Link reset password hanya berlaku untuk sementara waktu
+- Setelah berhasil reset, password lama tidak akan berlaku lagi
+- Pastikan menggunakan password yang kuat dan unik
+- Jangan bagikan password baru kepada siapapun
+
+Jika Anda mengalami masalah atau tidak melakukan permintaan ini, segera hubungi tim IT desa.
+
+Terima kasih,
+Tim IT Desa Moncongloe Bulu
+
+---
+Email ini dikirim otomatis oleh sistem PANDORA Desa Moncongloe Bulu
+Untuk keamanan, jangan balas email ini
+  `;
+  
+  return {
+    subject,
+    html: htmlBody,
+    text: textBody
+  };
+};
+
+// Template email untuk konfirmasi password berhasil diubah
+const createPasswordChangeConfirmationTemplate = (adminUsername, changeTime) => {
+  const subject = '✅ Password Admin Berhasil Diubah - Sistem PANDORA Desa Moncongloe Bulu';
+  
+  const htmlBody = `
+    <!DOCTYPE html>
+    <html lang="id">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>${subject}</title>
+      <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; box-shadow: 0 0 20px rgba(0,0,0,0.1); }
+        .header { background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 30px 20px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { padding: 30px 20px; background: #ffffff; }
+        .success-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 20px; margin: 20px 0; }
+        .success-icon { color: #10b981; font-size: 24px; margin-right: 10px; }
+        .info-box { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 20px; margin: 20px 0; }
+        .footer { text-align: center; margin-top: 30px; padding: 25px 20px; background: #f9fafb; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 14px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>✅ Password Berhasil Diubah</h1>
+          <p>Sistem PANDORA Desa Moncongloe Bulu</p>
+        </div>
+        
+        <div class="content">
+          <p>Halo Admin,</p>
+          
+          <div class="success-box">
+            <span class="success-icon">✅</span>
+            <strong>Password akun admin Anda berhasil diubah!</strong>
+          </div>
+          
+          <p>Password akun admin <strong>${adminUsername}</strong> telah berhasil diubah pada:</p>
+          
+          <div class="info-box">
+            <strong>Waktu Perubahan:</strong> ${changeTime}<br>
+            <strong>Status:</strong> Berhasil
+          </div>
+          
+          <p>Jika Anda tidak melakukan perubahan ini, segera:</p>
+          <ol style="margin: 10px 0; padding-left: 20px;">
+            <li>Login ke akun admin</li>
+            <li>Ubah password kembali</li>
+            <li>Hubungi tim IT desa untuk bantuan lebih lanjut</li>
+          </ol>
+          
+          <p>Untuk keamanan, pastikan:</p>
+          <ul style="margin: 10px 0; padding-left: 20px;">
+            <li>Password baru tidak dibagikan kepada siapapun</li>
+            <li>Logout dari semua perangkat yang menggunakan akun ini</li>
+            <li>Gunakan password yang kuat dan unik</li>
+          </ul>
+          
+          <p>Terima kasih,<br>
+          <strong>Tim IT Desa Moncongloe Bulu</strong></p>
+        </div>
+        
+        <div class="footer">
+          <p><strong>📧 Email ini dikirim otomatis oleh sistem PANDORA Desa Moncongloe Bulu</strong></p>
+          <p>Untuk keamanan, jangan balas email ini</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+  
+  const textBody = `
+✅ Password Admin Berhasil Diubah - Sistem PANDORA Desa Moncongloe Bulu
+
+Halo Admin,
+
+Password akun admin Anda berhasil diubah!
+
+Password akun admin ${adminUsername} telah berhasil diubah pada:
+Waktu Perubahan: ${changeTime}
+Status: Berhasil
+
+Jika Anda tidak melakukan perubahan ini, segera:
+1. Login ke akun admin
+2. Ubah password kembali
+3. Hubungi tim IT desa untuk bantuan lebih lanjut
+
+Untuk keamanan, pastikan:
+- Password baru tidak dibagikan kepada siapapun
+- Logout dari semua perangkat yang menggunakan akun ini
+- Gunakan password yang kuat dan unik
+
+Terima kasih,
+Tim IT Desa Moncongloe Bulu
+
+---
+Email ini dikirim otomatis oleh sistem PANDORA Desa Moncongloe Bulu
+Untuk keamanan, jangan balas email ini
+  `;
+  
+  return {
+    subject,
+    html: htmlBody,
+    text: textBody
+  };
+};
+
 module.exports = {
   createPengaduanNotificationTemplate,
   createStatusUpdateTemplate,
-  getUrgencyLevel,
-  getUrgencyColor,
-  getUrgencyIcon,
-  formatDate
+  createPasswordResetTemplate,
+  createPasswordChangeConfirmationTemplate
 };

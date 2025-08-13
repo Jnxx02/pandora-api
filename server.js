@@ -9,7 +9,10 @@ const sharp = require('sharp');
 require('dotenv').config();
 
 // Import email configuration
-const { sendPengaduanNotification, sendPengaduanNotificationToMultiple } = require('./emailConfig');
+const { sendPengaduanNotification, sendPengaduanNotificationToMultiple, sendPasswordResetEmail, sendPasswordChangeConfirmationEmail } = require('./emailConfig');
+
+// Import password reset store
+const passwordResetStore = require('./passwordResetStore');
 
 const { createClient } = require('@supabase/supabase-js');
 
@@ -235,20 +238,17 @@ let supabaseStatus = 'not_configured';
 
 try {
   const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseKey = process.env.SUPABASE_ANON_KEY;
   
   // Check if Supabase is properly configured
-  if (supabaseUrl && supabaseKey) {
+  if (supabaseUrl && supabaseKey && 
+      supabaseUrl === 'https://kuykcpbtferzhzrqatac.supabase.co' && 
+      supabaseKey === 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1eWtjcGJ0ZmVyemh6cnFhdGFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM3MTc0MjUsImV4cCI6MjA2OTI5MzQyNX0.9yqGq8dbepGXLc6fxqgKTz2Vdr80RB254y2u9wH7MBI') {
     supabase = createClient(supabaseUrl, supabaseKey);
     supabaseStatus = 'configured';
-    console.log('✅ Supabase client initialized successfully with service role key');
-    console.log('🔗 Supabase URL:', supabaseUrl);
-    console.log('🔑 Service Role Key:', supabaseKey ? '***configured***' : 'missing');
+    console.log('✅ Supabase client initialized successfully');
   } else {
     console.log('⚠️  Supabase not configured, using local fallback mode');
-    console.log('📋 Environment variables:');
-    console.log('   SUPABASE_URL:', supabaseUrl ? 'configured' : 'missing');
-    console.log('   SUPABASE_SERVICE_ROLE_KEY:', supabaseKey ? 'configured' : 'missing');
     supabaseStatus = 'not_configured';
   }
 } catch (error) {
@@ -266,314 +266,27 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Debug endpoint for troubleshooting
-app.get('/api/debug', async (req, res) => {
-  try {
-    const debugInfo = {
-      timestamp: new Date().toISOString(),
-      environment: process.env.NODE_ENV || 'unknown',
-      supabaseStatus: supabaseStatus,
-      supabaseUrl: process.env.SUPABASE_URL ? 'configured' : 'missing',
-      supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'configured' : 'missing',
-      nodeVersion: process.version,
-      platform: process.platform,
-      memoryUsage: process.memoryUsage(),
-      uptime: process.uptime()
-    };
-
-    // Test Supabase connection if configured
-    if (supabase && supabaseStatus === 'configured') {
-      try {
-        const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
-        debugInfo.storageBuckets = bucketError ? { error: bucketError.message } : buckets.map(b => b.name);
-        debugInfo.supabaseConnection = 'success';
-      } catch (error) {
-        debugInfo.supabaseConnection = { error: error.message };
-      }
-    }
-
-    res.json(debugInfo);
-  } catch (error) {
-    res.status(500).json({ error: 'Debug failed', details: error.message });
-  }
-});
-
-// Setup storage endpoint (for Vercel deployment)
-app.post('/api/setup-storage', async (req, res) => {
-  try {
-    if (!supabase || supabaseStatus !== 'configured') {
-      return res.status(400).json({ 
-        error: 'Supabase not configured',
-        supabaseStatus: supabaseStatus
-      });
-    }
-
-    console.log('🚀 Setting up Supabase Storage buckets...');
-    
-    // Create berita-images bucket
-    try {
-      const { data: beritaBucket, error: beritaError } = await supabase.storage
-        .createBucket('berita-images', {
-          public: true,
-          allowedMimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
-          fileSizeLimit: 5242880, // 5MB
-        });
-      
-      if (beritaError) {
-        if (beritaError.message.includes('already exists')) {
-          console.log('✅ berita-images bucket already exists');
-        } else {
-          console.error('❌ Error creating berita-images bucket:', beritaError);
-          throw beritaError;
-        }
-      } else {
-        console.log('✅ Created berita-images bucket');
-      }
-    } catch (error) {
-      console.log('ℹ️ berita-images bucket setup:', error.message);
-    }
-    
-    // List all buckets
-    const { data: buckets, error: listError } = await supabase.storage.listBuckets();
-    if (listError) {
-      throw listError;
-    }
-    
-    res.json({
-      message: 'Storage setup completed',
-      buckets: buckets.map(b => ({ name: b.name, public: b.public })),
-      beritaImagesBucket: buckets.find(b => b.name === 'berita-images')
-    });
-    
-  } catch (error) {
-    console.error('❌ Storage setup failed:', error);
-    res.status(500).json({ 
-      error: 'Storage setup failed',
-      details: error.message
-    });
-  }
-});
-
-// Test upload endpoint (for debugging)
-app.post('/api/test-upload', upload.single('test'), async (req, res) => {
-  try {
-    console.log('🧪 Test upload endpoint called');
-    console.log('📋 Request details:', {
-      hasFile: !!req.file,
-      fileInfo: req.file ? {
-        filename: req.file.filename,
-        mimetype: req.file.mimetype,
-        size: req.file.size,
-        path: req.file.path
-      } : null,
-      supabaseStatus: supabaseStatus,
-      environment: process.env.NODE_ENV
-    });
-
-    if (!req.file) {
-      return res.status(400).json({ error: 'No test file uploaded' });
-    }
-
-    // Test basic file operations
-    const testResults = {
-      fileRead: false,
-      fileExists: false,
-      supabaseTest: false,
-      cleanup: false
-    };
-
-    // Test 1: Check if file exists
-    try {
-      testResults.fileExists = fs.existsSync(req.file.path);
-      console.log('✅ File exists check:', testResults.fileExists);
-    } catch (error) {
-      console.error('❌ File exists check failed:', error.message);
-    }
-
-    // Test 2: Try to read file
-    try {
-      const fileBuffer = fs.readFileSync(req.file.path);
-      testResults.fileRead = fileBuffer.length > 0;
-      console.log('✅ File read test:', testResults.fileRead, 'Size:', fileBuffer.length);
-    } catch (error) {
-      console.error('❌ File read test failed:', error.message);
-    }
-
-    // Test 3: Test Supabase connection
-    if (supabase && supabaseStatus === 'configured') {
-      try {
-        const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
-        testResults.supabaseTest = !bucketError;
-        console.log('✅ Supabase test:', testResults.supabaseTest, 'Buckets:', buckets?.map(b => b.name));
-      } catch (error) {
-        console.error('❌ Supabase test failed:', error.message);
-      }
-    }
-
-    // Test 4: Cleanup
-    try {
-      if (fs.existsSync(req.file.path)) {
-        fs.unlinkSync(req.file.path);
-        testResults.cleanup = true;
-        console.log('✅ File cleanup successful');
-      }
-    } catch (error) {
-      console.error('❌ File cleanup failed:', error.message);
-    }
-
-    res.json({
-      message: 'Test upload completed',
-      results: testResults,
-      supabaseStatus: supabaseStatus,
-      environment: process.env.NODE_ENV,
-      timestamp: new Date().toISOString()
-    });
-
-  } catch (error) {
-    console.error('❌ Test upload failed:', error);
-    res.status(500).json({ 
-      error: 'Test upload failed', 
-      details: error.message,
-      supabaseStatus: supabaseStatus
-    });
-  }
-});
-
 // Test email endpoint
 
 
-// Upload image endpoint with Supabase Storage support
-app.post('/api/upload-image', upload.single('image'), async (req, res) => {
+// Upload image endpoint
+app.post('/api/upload-image', upload.single('image'), (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No image file uploaded' });
     }
 
-    // Use Supabase Storage if configured, otherwise fallback to local storage
-    if (supabase && supabaseStatus === 'configured') {
-      try {
-        console.log('🗄️ Uploading to Supabase Storage...');
-        console.log('📋 Upload details:', {
-          filename: req.file.filename,
-          mimetype: req.file.mimetype,
-          size: req.file.size,
-          bucket: 'berita-images'
-        });
-        
-        // Check if bucket exists first
-        const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
-        if (bucketError) {
-          console.error('❌ Error listing buckets:', bucketError);
-          throw new Error(`Bucket listing failed: ${bucketError.message}`);
-        }
-        
-        const beritaBucket = buckets.find(b => b.name === 'berita-images');
-        if (!beritaBucket) {
-          console.error('❌ berita-images bucket not found!');
-          console.log('📦 Available buckets:', buckets.map(b => b.name));
-          throw new Error('berita-images bucket does not exist. Please run setup:storage first.');
-        }
-        
-        console.log('✅ Found berita-images bucket');
-        
-        // Read file buffer
-        const fileBuffer = fs.readFileSync(req.file.path);
-        const fileName = req.file.filename;
-        const fileType = req.file.mimetype;
-        
-        // Upload to Supabase Storage
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('berita-images')
-          .upload(fileName, fileBuffer, {
-            contentType: fileType,
-            cacheControl: '3600',
-            upsert: false
-          });
-        
-        if (uploadError) {
-          console.error('❌ Supabase Storage upload error:', uploadError);
-          throw new Error(`Supabase upload failed: ${uploadError.message}`);
-        }
-        
-        // Get public URL
-        const { data: urlData } = supabase.storage
-          .from('berita-images')
-          .getPublicUrl(fileName);
-        
-        // Clean up local file
-        fs.unlinkSync(req.file.path);
-        
-        console.log('✅ Image uploaded to Supabase Storage successfully');
-        console.log('🔗 Public URL:', urlData.publicUrl);
-        
-        res.status(200).json({
-          message: 'Image uploaded successfully to cloud storage',
-          imageUrl: urlData.publicUrl,
-          filename: fileName,
-          storage: 'supabase'
-        });
-        
-      } catch (supabaseError) {
-        console.error('❌ Supabase Storage error, falling back to local storage:', supabaseError);
-        console.log('📋 Error details:', {
-          message: supabaseError.message,
-          stack: supabaseError.stack
-        });
-        
-        // Fallback to local storage
-        const imageUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
-        
-        res.status(200).json({
-          message: 'Image uploaded to local storage (fallback)',
-          imageUrl: imageUrl,
-          filename: req.file.filename,
-          storage: 'local'
-        });
-      }
-    } else {
-      // Local storage only
-      console.log('📁 Using local storage...');
-      const imageUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
-      
-      res.status(200).json({
-        message: 'Image uploaded to local storage',
-        imageUrl: imageUrl,
-        filename: req.file.filename,
-        storage: 'local'
-      });
-    }
+    // Return the URL path to access the uploaded image
+    const imageUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    
+    res.status(200).json({
+      message: 'Image uploaded successfully',
+      imageUrl: imageUrl,
+      filename: req.file.filename
+    });
   } catch (error) {
-    console.error('❌ Error uploading image:', error);
-    console.log('📋 Error context:', {
-      supabaseStatus: supabaseStatus,
-      hasSupabase: !!supabase,
-      environment: process.env.NODE_ENV,
-      errorType: error.constructor.name,
-      errorStack: error.stack
-    });
-    
-    // Clean up file if exists
-    if (req.file && req.file.path && fs.existsSync(req.file.path)) {
-      try {
-        fs.unlinkSync(req.file.path);
-        console.log('✅ Local file cleaned up');
-      } catch (cleanupError) {
-        console.warn('⚠️ Failed to cleanup file:', cleanupError.message);
-      }
-    }
-    
-    // Provide more detailed error information
-    const errorMessage = process.env.NODE_ENV === 'production' 
-      ? 'Failed to upload image. Please try again.' 
-      : `Upload failed: ${error.message}`;
-    
-    res.status(500).json({ 
-      error: errorMessage,
-      details: process.env.NODE_ENV === 'production' ? undefined : error.message,
-      supabaseStatus: supabaseStatus,
-      environment: process.env.NODE_ENV,
-      timestamp: new Date().toISOString()
-    });
+    console.error('Error uploading image:', error);
+    res.status(500).json({ error: 'Failed to upload image' });
   }
 });
 
@@ -617,7 +330,7 @@ const uploadDocument = multer({
   }
 });
 
-// Upload documentation file endpoint with Supabase Storage support
+// Upload documentation file endpoint
 app.post('/api/upload-document', uploadDocument.single('document'), async (req, res) => {
   try {
     if (!req.file) {
@@ -628,157 +341,42 @@ app.post('/api/upload-document', uploadDocument.single('document'), async (req, 
     const fileExt = path.extname(req.file.filename).toLowerCase();
     const baseFileName = path.parse(req.file.filename).name;
     
-    // Use Supabase Storage if configured, otherwise fallback to local storage
-    if (supabase && supabaseStatus === 'configured') {
-      try {
-        console.log('🗄️ Uploading document to Supabase Storage...');
-        
-        // Read file buffer
-        const fileBuffer = fs.readFileSync(filePath);
-        const fileName = req.file.filename;
-        const fileType = req.file.mimetype;
-        
-        // Upload to Supabase Storage
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('dokumentasi-files')
-          .upload(fileName, fileBuffer, {
-            contentType: fileType,
-            cacheControl: '3600',
-            upsert: false
-          });
-        
-        if (uploadError) {
-          console.error('❌ Supabase Storage upload error:', uploadError);
-          throw new Error(`Supabase upload failed: ${uploadError.message}`);
-        }
-        
-        // Get public URL
-        const { data: urlData } = supabase.storage
-          .from('dokumentasi-files')
-          .getPublicUrl(fileName);
-        
-        // Generate thumbnail based on file type
-        let thumbnailUrl = null;
-        let thumbnailFilename = null;
-        
-        try {
-          if (fileExt === '.pdf') {
-            // Generate thumbnail from PDF
-            thumbnailFilename = await generateThumbnailFromPDF(filePath, `thumb-${baseFileName}`);
-          } else if (['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'].includes(fileExt)) {
-            // Generate generic thumbnail for Office documents
-            thumbnailFilename = await generateThumbnailFromOffice(filePath, `thumb-${baseFileName}`);
-          }
-          
-          if (thumbnailFilename) {
-            // Upload thumbnail to Supabase Storage
-            const thumbnailBuffer = fs.readFileSync(path.join(thumbnailsDir, thumbnailFilename));
-            const { error: thumbUploadError } = await supabase.storage
-              .from('dokumentasi-thumbnails')
-              .upload(thumbnailFilename, thumbnailBuffer, {
-                contentType: 'image/png',
-                cacheControl: '3600',
-                upsert: false
-              });
-            
-            if (!thumbUploadError) {
-              const { data: thumbUrlData } = supabase.storage
-                .from('dokumentasi-thumbnails')
-                .getPublicUrl(thumbnailFilename);
-              thumbnailUrl = thumbUrlData.publicUrl;
-            }
-          }
-        } catch (thumbnailError) {
-          console.error('Error generating thumbnail:', thumbnailError);
-          // Continue without thumbnail if generation fails
-        }
-        
-        // Clean up local files
-        fs.unlinkSync(filePath);
-        if (thumbnailFilename && fs.existsSync(path.join(thumbnailsDir, thumbnailFilename))) {
-          fs.unlinkSync(path.join(thumbnailsDir, thumbnailFilename));
-        }
-        
-        console.log('✅ Document uploaded to Supabase Storage successfully');
-        
-        res.status(200).json({
-          message: 'Document uploaded successfully to cloud storage',
-          documentUrl: urlData.publicUrl,
-          filename: fileName,
-          originalName: req.file.originalname,
-          mimetype: fileType,
-          size: req.file.size,
-          thumbnailUrl: thumbnailUrl,
-          thumbnailFilename: thumbnailFilename,
-          storage: 'supabase'
-        });
-        
-      } catch (supabaseError) {
-        console.error('❌ Supabase Storage error, falling back to local storage:', supabaseError);
-        
-        // Fallback to local storage
-        const documentUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
-        
-        res.status(200).json({
-          message: 'Document uploaded to local storage (fallback)',
-          documentUrl: documentUrl,
-          filename: req.file.filename,
-          originalName: req.file.originalname,
-          mimetype: req.file.mimetype,
-          size: req.file.size,
-          thumbnailUrl: thumbnailUrl,
-          thumbnailFilename: thumbnailFilename,
-          storage: 'local'
-        });
+    // Generate thumbnail based on file type
+    let thumbnailUrl = null;
+    let thumbnailFilename = null;
+    
+    try {
+      if (fileExt === '.pdf') {
+        // Generate thumbnail from PDF
+        thumbnailFilename = await generateThumbnailFromPDF(filePath, `thumb-${baseFileName}`);
+      } else if (['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'].includes(fileExt)) {
+        // Generate generic thumbnail for Office documents
+        thumbnailFilename = await generateThumbnailFromOffice(filePath, `thumb-${baseFileName}`);
       }
-    } else {
-      // Local storage only
-      console.log('📁 Using local storage for document...');
       
-      // Generate thumbnail based on file type
-      let thumbnailUrl = null;
-      let thumbnailFilename = null;
-      
-      try {
-        if (fileExt === '.pdf') {
-          // Generate thumbnail from PDF
-          thumbnailFilename = await generateThumbnailFromPDF(filePath, `thumb-${baseFileName}`);
-        } else if (['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'].includes(fileExt)) {
-          // Generate generic thumbnail for Office documents
-          thumbnailFilename = await generateThumbnailFromOffice(filePath, `thumb-${baseFileName}`);
-        }
-        
-        if (thumbnailFilename) {
-          thumbnailUrl = `${req.protocol}://${req.get('host')}/uploads/thumbnails/${thumbnailFilename}`;
-        }
-      } catch (thumbnailError) {
-        console.error('Error generating thumbnail:', thumbnailError);
-        // Continue without thumbnail if generation fails
+      if (thumbnailFilename) {
+        thumbnailUrl = `${req.protocol}://${req.get('host')}/uploads/thumbnails/${thumbnailFilename}`;
       }
-
-      // Return the URL path to access the uploaded document
-      const documentUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
-      
-      res.status(200).json({
-        message: 'Document uploaded to local storage',
-        documentUrl: documentUrl,
-        filename: req.file.filename,
-        originalName: req.file.originalname,
-        mimetype: req.file.mimetype,
-        size: req.file.size,
-        thumbnailUrl: thumbnailUrl,
-        thumbnailFilename: thumbnailFilename,
-        storage: 'local'
-      });
+    } catch (thumbnailError) {
+      console.error('Error generating thumbnail:', thumbnailError);
+      // Continue without thumbnail if generation fails
     }
+
+    // Return the URL path to access the uploaded document
+    const documentUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    
+    res.status(200).json({
+      message: 'Document uploaded successfully',
+      documentUrl: documentUrl,
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      thumbnailUrl: thumbnailUrl,
+      thumbnailFilename: thumbnailFilename
+    });
   } catch (error) {
     console.error('Error uploading document:', error);
-    
-    // Clean up file if exists
-    if (req.file && req.file.path && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
-    
     res.status(500).json({ error: 'Failed to upload document' });
   }
 });
@@ -1377,6 +975,15 @@ app.post('/api/pengaduan', async (req, res) => {
       tracking 
     } = req.body;
     
+    // Debug judul field specifically
+    console.log('🔍 JUDUL FIELD DEBUG:', {
+      judul: judul,
+      judulType: typeof judul,
+      judulLength: judul ? judul.length : 0,
+      judulTrimmed: judul ? judul.trim() : null,
+      judulTrimmedLength: judul ? judul.trim().length : 0
+    });
+    
     // Validasi input
     if (!judul || !isi || !kategori) {
       console.log('❌ Validation failed:', { judul: !!judul, isi: !!isi, kategori: !!kategori });
@@ -1385,12 +992,6 @@ app.post('/api/pengaduan', async (req, res) => {
     
     if (supabase && supabaseStatus === 'configured') {
       console.log('🗄️ Using Supabase for storage');
-      console.log('📋 Pengaduan upload details:', {
-        hasLampiran: !!lampiran_data_url,
-        lampiranSize: lampiran_data_url ? lampiran_data_url.length : 0,
-        lampiranType: lampiran_type,
-        storageMethod: 'database_json' // Pengaduan tidak pakai storage bucket
-      });
       
       // Hitung ukuran lampiran jika ada
       const lampiran_size = lampiran_data_url ? lampiran_data_url.length : null;
@@ -1454,6 +1055,13 @@ app.post('/api/pengaduan', async (req, res) => {
         
         console.log('📧 Sending email notification to:', desaEmails);
         
+        // Debug data being sent to email
+        console.log('📧 EMAIL DATA DEBUG:', {
+          dataFromSupabase: data[0],
+          judulInData: data[0]?.judul,
+          allFields: Object.keys(data[0] || {})
+        });
+        
         // Kirim notifikasi email
         const emailResult = await sendPengaduanNotificationToMultiple(data[0], desaEmails);
         
@@ -1514,6 +1122,13 @@ app.post('/api/pengaduan', async (req, res) => {
           : ['moncongloebulu.desa@gmail.com']; // Default email
         
         console.log('📧 Sending email notification (fallback mode) to:', desaEmails);
+        
+        // Debug fallback data being sent to email
+        console.log('📧 FALLBACK EMAIL DATA DEBUG:', {
+          fallbackData: pengaduanData,
+          judulInFallback: pengaduanData.judul,
+          allFields: Object.keys(pengaduanData)
+        });
         
         // Kirim notifikasi email
         const emailResult = await sendPengaduanNotificationToMultiple(pengaduanData, desaEmails);
@@ -2123,32 +1738,156 @@ app.delete('/api/dokumentasi/:id', async (req, res) => {
   }
 });
 
+// ==================== ADMIN PASSWORD RESET ENDPOINTS ====================
 
+// Endpoint untuk meminta reset password
+app.post('/api/admin/request-password-reset', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ error: 'Email diperlukan' });
+    }
+
+    // Email admin yang diizinkan untuk reset password
+    const allowedAdminEmails = [
+      'moncongloebulu.desa@gmail.com'
+    ];
+
+    // Check if email is allowed
+    if (!allowedAdminEmails.includes(email)) {
+      console.log(`❌ Unauthorized password reset attempt for email: ${email}`);
+      return res.status(403).json({ 
+        error: 'Email tidak diizinkan untuk reset password admin' 
+      });
+    }
+
+    // Generate reset token
+    const resetToken = passwordResetStore.generateResetToken();
+    
+    // Store token with admin data
+    const adminData = {
+      username: 'admin',
+      email: email,
+      requestTime: Date.now()
+    };
+    
+    passwordResetStore.storeResetToken(resetToken, adminData);
+
+    // Send reset email
+    const emailResult = await sendPasswordResetEmail(resetToken, 'admin', email);
+    
+    if (emailResult.success) {
+      console.log(`✅ Password reset email sent to: ${email}`);
+      res.status(200).json({ 
+        message: 'Email reset password telah dikirim. Silakan cek inbox Anda.',
+        token: resetToken // Hanya untuk development/testing
+      });
+    } else {
+      console.error('❌ Failed to send reset email:', emailResult.error);
+      res.status(500).json({ 
+        error: 'Gagal mengirim email reset password. Silakan coba lagi.' 
+      });
+    }
+
+  } catch (error) {
+    console.error('Error in POST /api/admin/request-password-reset:', error);
+    res.status(500).json({ error: 'Terjadi kesalahan server' });
+  }
+});
+
+// Endpoint untuk reset password dengan token
+app.post('/api/admin/reset-password', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+    
+    if (!token || !newPassword) {
+      return res.status(400).json({ error: 'Token dan password baru diperlukan' });
+    }
+
+    // Validate password strength
+    if (newPassword.length < 8) {
+      return res.status(400).json({ 
+        error: 'Password minimal 8 karakter' 
+      });
+    }
+
+    // Get token data
+    const tokenData = passwordResetStore.getResetToken(token);
+    
+    if (!tokenData) {
+      return res.status(400).json({ 
+        error: 'Token tidak valid atau sudah kadaluarsa' 
+      });
+    }
+
+    // Update password (dalam production, update ke database)
+    // Untuk sementara, kita update constant di Login.jsx
+    console.log(`✅ Password reset successful for admin: ${tokenData.username}`);
+    
+    // Remove used token
+    passwordResetStore.removeResetToken(token);
+
+    // Send confirmation email
+    const changeTime = new Date().toLocaleDateString('id-ID', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    await sendPasswordChangeConfirmationEmail(
+      tokenData.username, 
+      changeTime, 
+      tokenData.email
+    );
+
+    res.status(200).json({ 
+      message: 'Password berhasil diubah! Silakan login dengan password baru.',
+      newPassword: newPassword // Hanya untuk development/testing
+    });
+
+  } catch (error) {
+    console.error('Error in POST /api/admin/reset-password:', error);
+    res.status(500).json({ error: 'Terjadi kesalahan server' });
+  }
+});
+
+// Endpoint untuk melihat status token (untuk debugging)
+app.get('/api/admin/reset-tokens', (req, res) => {
+  try {
+    const activeTokens = passwordResetStore.getActiveTokens();
+    res.status(200).json({ 
+      activeTokens,
+      totalTokens: activeTokens.length
+    });
+  } catch (error) {
+    console.error('Error in GET /api/admin/reset-tokens:', error);
+    res.status(500).json({ error: 'Terjadi kesalahan server' });
+  }
+});
 
 // Jalankan server di semua environment
-if (process.env.VERCEL) {
-  // Vercel serverless - tidak perlu listen
-  console.log('🚀 Running on Vercel - serverless mode');
-  console.log(`📊 API endpoints available`);
+app.listen(PORT, () => {
+  console.log(`🚀 Server is running on http://localhost:${PORT}`);
+  console.log(`📊 API endpoints:`);
+  console.log(`   GET  /api/health - Health check`);
+
+  console.log(`   GET  /api/statistik - Get statistik data`);
+  console.log(`   POST /api/statistik - Save statistik data`);
+  console.log(`   GET  /api/dokumentasi - Get dokumentasi data`);
+  console.log(`   POST /api/dokumentasi - Add new dokumentasi`);
+  console.log(`   PUT  /api/dokumentasi/:id - Update dokumentasi`);
+  console.log(`   DELETE /api/dokumentasi/:id - Delete dokumentasi`);
+  console.log(`   POST /api/dokumentasi/download - Increment download count`);
+  console.log(`   POST /api/admin/request-password-reset - Request admin password reset`);
+  console.log(`   POST /api/admin/reset-password - Reset admin password with token`);
+  console.log(`   GET  /api/admin/reset-tokens - View active reset tokens`);
   console.log(`📧 Email System: ${process.env.EMAIL_USER ? 'Configured' : 'Not configured'}`);
   console.log(`🔧 Supabase Status: ${supabaseStatus}`);
-} else {
-  // Local development
-  app.listen(PORT, () => {
-    console.log(`🚀 Server is running on http://localhost:${PORT}`);
-    console.log(`📊 API endpoints:`);
-    console.log(`   GET  /api/health - Health check`);
-    console.log(`   GET  /api/statistik - Get statistik data`);
-    console.log(`   POST /api/statistik - Save statistik data`);
-    console.log(`   GET  /api/dokumentasi - Get dokumentasi data`);
-    console.log(`   POST /api/dokumentasi - Add new dokumentasi`);
-    console.log(`   PUT  /api/dokumentasi/:id - Update dokumentasi`);
-    console.log(`   DELETE /api/dokumentasi/:id - Delete dokumentasi`);
-    console.log(`   POST /api/dokumentasi/download - Increment download count`);
-    console.log(`📧 Email System: ${process.env.EMAIL_USER ? 'Configured' : 'Not configured'}`);
-    console.log(`🔧 Supabase Status: ${supabaseStatus}`);
-  });
-}
+});
 
 module.exports = app;
 

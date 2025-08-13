@@ -6,8 +6,6 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "setup:storage": "node setup-supabase-storage.js",
-    "setup:storage:vercel": "node setup-supabase-storage.js",
     "test:email:simple": "node test-email-simple.js",
     "test:email:vercel": "node test-email-vercel.js",
     "test:pengaduan:simple": "node test-pengaduan-simple.js"
